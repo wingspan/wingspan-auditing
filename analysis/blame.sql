@@ -1,31 +1,65 @@
--- Blame query
-select 
-  *
-from 
-(
-  select 
-    audit_date,
-    audit_user,
-    audit_action,
-    id,
-    title,
-    (case when ne(title, lead(title) over y) then audit_user else null end) title$u, 
-    dense_rank() over y title$r,
-    title$c
-  from (
-    select 
-      id,
-      title,
-      ne(title, lead(title) over w) title$c,
-      audit_date,
-      audit_user,
-      audit_action
-    from movies$a
-    where audit_action in ('I', 'U')
-    WINDOW w AS ( PARTITION by id ORDER BY audit_date DESC)
-  ) a
-  WINDOW y AS ( PARTITION by id ORDER BY audit_date DESC, title$c DESC)
-) b
-WHERE title$r = 1
-;
+create type blame_type as (
+  id integer, 
+  output varchar,
+  audit_action varchar,
+  audit_request varchar,  
+  audit_txid bigint,
+  audit_user varchar,
+  audit_date timestamp);
 
+create or replace function blame(table_name varchar, column_name varchar) returns 
+  setof blame_type
+language plpgsql AS $fn$
+declare
+  r record;
+begin
+  perform format('create type ()');
+  
+  for r in
+  execute format ('
+  select 
+    id,
+    column$c::varchar output,
+    audit_action,
+    audit_request,  
+    audit_txid,
+    audit_user,
+    audit_date
+  from 
+  (
+    select 
+      audit_action,
+      audit_request,  
+      audit_txid,
+      audit_user,
+      audit_date,
+      id,
+      column$p,
+      column$c,
+      max(audit_txid) over (partition by id) audit_txid_max
+    from (
+      select 
+        id,
+        %s column$c,
+        lead(%s) over w column$p,
+        audit_action,
+        audit_request,  
+        audit_txid,
+        audit_user,
+        audit_date
+      from %s$a
+      where audit_action in (''I'', ''U'')
+      window w AS (partition by id order by audit_date desc)
+    ) a
+    where (column$p <> column$c or audit_action = ''I'')
+  ) b
+  where audit_txid_max = audit_txid',
+  column_name,
+  column_name,
+  table_name
+  )
+  loop
+    return next r;
+  end loop;  
+end;
+$fn$;
