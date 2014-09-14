@@ -15,8 +15,10 @@ Package structure:
 
 Setup:
 - Set up a Postgres database (9.3+ supported, but some functionality may work on older versions)
-- Choose the example schema and run the install.sql file with psql
-- OR run install.sql with psql against your own database
+- Ensure that psql is on your path
+- To use the example schema, edit install_movies.sh to have correct connection information
+- Run ./install_movies.sh
+- OR run install_auditing.sql with psql against your own database
 
 Common Configuration Changes:
 * You may wish to exclude specific columns or column types from auditing. This can be controlled by changing audit/create_triggers.sql

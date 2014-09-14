@@ -29,3 +29,11 @@ begin
   return result;
 end;
 $$;
+
+create or replace function ne(a text, b text) returns boolean
+language plpgsql AS $$
+begin
+  return (a is null and b is not null) or (a is not null and b is null) or (a <> b);
+end;
+$$;
+
