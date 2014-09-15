@@ -1,6 +1,7 @@
 create table movies (
   id int primary key,
-  title text
+  title text,
+  studio text
 );
 
 create table licenses (
