@@ -1,5 +1,5 @@
 create or replace function undo(
-  audit_txid bigint, audit_request varchar, audit_action varchar, audit_user varchar, audit_interval interval, audit_tables varchar[]
+  audit_txid bigint, audit_tables varchar[]
 ) returns void
 language plpgsql AS $$
 declare
@@ -19,30 +19,10 @@ declare
 
   reserved_columns varchar[];
 begin
-  reserved_columns := array['audit_action', 'audit_date', 'audit_request', 'audit_txid', 'audit_user', 'id'];
+  reserved_columns := get_audit_columns();
 
-  where_clause := 'where';
-  if (audit_txid is not null) then
-    where_clause := where_clause || ' and audit_data.audit_txid = ' || audit_txid;
-  end if;
-
-  if (audit_request is not null) then
-    where_clause := where_clause || ' and audit_data.audit_request = ''' || format('%I', audit_request) || '''';
-  end if;
-
-  if (audit_action is not null) then
-    where_clause := where_clause || ' and audit_data.audit_action = ''' || format('%I', audit_action) || '''';
-  end if;
-
-  if (audit_user is not null) then
-    where_clause := where_clause || ' and audit_data.audit_user = ''' || format('%I', audit_user) || '''';
-  end if;
-
-  if (audit_interval is not null) then
-    where_clause := where_clause || ' and audit_data.audit_interval <% interval ''' || format('%I', audit_interval) || '''';
-  end if;
-
-  where_clause := regexp_replace(where_clause, 'where and', 'where');
+	-- what 'undo' means for insert isn't well defined, so don't let it happen
+  where_clause := 'audit_data.audit_txid <= ' || audit_txid;
 
   -- todo sorting
   for tables in 
@@ -52,7 +32,7 @@ begin
       and t.table_schema = current_schema
       and (audit_tables is null or t.table_name = any (audit_tables))
   loop  
-    table_name = current_schema || '.' || format('%I', tables.table_name) || '$a';
+    table_name = current_schema || '.' || format('%I', tables.table_name);
 
     -- find out which columns changed, and the prior values.
     -- sort these in order they happened so we can undo them in
@@ -60,34 +40,42 @@ begin
     from_sql := 
       format(
 '-- undo query
-with prior as (
-  select rank() over w,
-         audit_data.*         
-  from %s audit_data
-  %s
-  window w as (partition by id order by audit_date desc)
-  order by 1 
-  offset 1 
-  limit 1
+with change as (
+  select %s, %s
+  from (
+    select %s, %s 
+    from (
+      select *
+      from %s$a audit_data
+      where audit_action in (''U'', ''D'')
+		    and %s
+      order by audit_txid desc
+    ) a
+  ) b
+  group by %s
 )
 update %s audit_data
 set %s
-from prior
-%s
+from change
+where change.%s = audit_data.%s
 ',
+      per_column('array_agg(${column}) ${column}', ', ', current_schema, tables.table_name, reserved_columns),
+			cfg_get_id(current_schema, tables.table_name),
+      per_column('${column}', ', ', current_schema, tables.table_name, reserved_columns),
+			cfg_get_id(current_schema, tables.table_name),		
       table_name,
       where_clause,
+      cfg_get_id(current_schema, tables.table_name),
       table_name,
       per_column('
   ${column} = 
     (case when 
-      (audit_data.${column} <> prior.${column}) or
-      (audit_data.${column} is null and prior.${column} is not null) or 
-      (audit_data.${column} is not null and audit_data.${column} is null)
-    then prior.${column} 
+      ne(change.${column}[1], change.${column}[2])
+    then change.${column}[2]
     else audit_data.${column} 
-    end)', ', ', current_schema::varchar, tables.table_name, reserved_columns),
-      where_clause
+    end)', ', ', current_schema, tables.table_name, reserved_columns),
+			cfg_get_id(current_schema, tables.table_name),
+			cfg_get_id(current_schema, tables.table_name)
     );
 
     raise notice '%', from_sql;
@@ -97,4 +85,3 @@ from prior
   end loop;
 end;
 $$;
-

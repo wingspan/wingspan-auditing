@@ -1,3 +1,4 @@
+\i audit/config.sql
 \i audit/context.sql
 \i audit/util.sql
 \i audit/create_triggers.sql

@@ -1,5 +1,5 @@
 create or replace function per_column(
-  snippet varchar, delimeter varchar, search_schema varchar, search_table varchar, skip varchar[]
+  snippet varchar, delimeter varchar, search_schema text, search_table varchar, skip varchar[]
 ) returns varchar
 language plpgsql AS $$
 declare
@@ -30,10 +30,39 @@ begin
 end;
 $$;
 
-create or replace function ne(a text, b text) returns boolean
+
+create or replace function create_ne() returns void
 language plpgsql AS $$
+declare
+  type_list text[];
+  t text;
+begin
+  type_list := 
+	  array['char', 'abstime', 'anyarray', 'bigint', 'boolean', 'bytea',
+	        'character', 'character varying', 'date', 'double precision', 'inet',
+				  'integer', 'interval', 'name', 'real', 
+					'regproc', 'smallint', 'text', 'timestamp with time zone',
+          'timestamp without time zone', 'tstzrange', 'xid'];
+
+  for t in select unnest(type_list)
+  loop
+    execute format('create or replace function ne(a %s, b %s) returns boolean
+language plpgsql AS $ne$
 begin
   return (a is null and b is not null) or (a is not null and b is null) or (a <> b);
 end;
+$ne$;', t, t);
+  end loop;
+end;
 $$;
+
+select create_ne();
+
+create or replace function get_audit_columns() returns varchar[]
+language plpgsql AS $$
+begin
+  return array['audit_action', 'audit_date', 'audit_request', 'audit_txid', 'audit_user', 'id'];
+end;
+$$;
+
 
