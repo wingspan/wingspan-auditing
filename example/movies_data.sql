@@ -17,5 +17,5 @@ set title = 'Star Wars - Phantom Menace'
 where title = 'Star Wars';
 
 set application_name to 'request_3,greg';
-delete from licenses;
-delete from movies;
+delete from licenses where id = 2;
+delete from movies where id = 2;

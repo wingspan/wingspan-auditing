@@ -9,7 +9,6 @@ select * from licenses$a;
 select * from blame('movies', 'title');
 select * from blame('licenses', 'title');
 
--- Reset a change
 create or replace function test_undo() returns void
 language plpgsql AS $$
 declare
@@ -21,4 +20,22 @@ end;
 $$;
 
 select test_undo();
+
+select * from movies where id = 1;
+
+create or replace function test_redo() returns void
+language plpgsql AS $$
+declare
+  txid int;
+begin
+  select audit_txid from movies$a order by 1 offset 1 limit 1 into txid;
+  perform redo(txid, null);
+end;
+$$;
+
+select test_redo();
+select * from movies where id = 1;
+
 drop function test_undo();
+drop function test_redo();
+

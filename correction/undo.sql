@@ -1,5 +1,5 @@
-create or replace function undo(
-  audit_txid bigint, audit_tables varchar[]
+create or replace function change(
+  audit_txid bigint, audit_tables varchar[], idx int
 ) returns void
 language plpgsql AS $$
 declare
@@ -47,8 +47,7 @@ with change as (
     from (
       select *
       from %s$a audit_data
-      where audit_action in (''U'', ''D'')
-		    and %s
+      where %s
       order by audit_txid desc
     ) a
   ) b
@@ -71,7 +70,7 @@ where change.%s = audit_data.%s
   ${column} = 
     (case when 
       ne(change.${column}[1], change.${column}[2])
-    then change.${column}[2]
+    then change.${column}[' || idx || ']
     else audit_data.${column} 
     end)', ', ', current_schema, tables.table_name, reserved_columns),
 			cfg_get_id(current_schema, tables.table_name),
@@ -83,5 +82,23 @@ where change.%s = audit_data.%s
 
     execute from_sql;
   end loop;
+end;
+$$;
+
+create or replace function undo(
+  audit_txid bigint, audit_tables varchar[]
+) returns void
+language plpgsql AS $$
+begin
+  execute change(audit_txid, audit_tables, 2);
+end;
+$$;
+
+create or replace function redo(
+  audit_txid bigint, audit_tables varchar[]
+) returns void
+language plpgsql AS $$
+begin
+  execute change(audit_txid, audit_tables, 1);
 end;
 $$;
