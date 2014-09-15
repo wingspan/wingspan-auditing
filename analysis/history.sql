@@ -1,3 +1,75 @@
+create or replace function create_history_view(
+  main_table_name text
+) returns void
+language plpgsql AS $$
+declare
+  fks record;
+  col record;
+
+  sql text;
+  column_list text;
+  
+  table_list text[];
+begin
+  table_list := array[main_table_name];
+      
+  sql := 'from ' || main_table_name;
+  for fks in 
+    -- todo: recursive
+    select 
+      tc.constraint_name, tc.table_name, kcu.column_name, 
+      ccu.table_name as foreign_table_name,
+      ccu.column_name as foreign_column_name
+    from information_schema.table_constraints as tc 
+    join information_schema.key_column_usage as kcu
+      on tc.constraint_name = kcu.constraint_name
+    join information_schema.constraint_column_usage as ccu
+      on ccu.constraint_name = tc.constraint_name
+    where constraint_type = 'FOREIGN KEY' 
+      and tc.table_schema = current_schema
+      and ccu.constraint_schema = current_schema
+      and tc.constraint_schema = current_schema
+      and kcu.constraint_schema = current_schema
+      and ccu.table_name = main_table_name
+  loop
+    -- TODO: logic for left / right / outer join
+    table_list := array_append(table_list, fks.table_name::text);
+    
+    sql := sql || format('
+left join %I on %I.%I = %I.%I', 
+      fks.table_name, 
+      fks.table_name, fks.column_name,
+      fks.table_name, fks.foreign_column_name);
+  end loop;
+
+  column_list := '';
+
+  raise notice '*%*', table_list[2];
+  
+  for col in 
+    select * 
+    from information_schema.columns
+    where table_name = any(table_list)
+      and table_schema = current_schema
+    order by table_name, column_name
+  loop    
+    column_list := column_list ||
+      col.table_name || '.' || col.column_name || ' as ' || 
+      col.table_name || '_' || col.column_name || ', ';
+  end loop;
+
+  sql :=
+    'select ' || 
+    substring(
+      column_list 
+      from 0 
+      for length(column_list) - 1) ||
+    e'\n' || sql;
+
+  raise notice '%', sql;
+end;
+$$;
+
 
 
 -- Range test
