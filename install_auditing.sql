@@ -6,6 +6,5 @@
 \i analysis/diff.sql
 \i analysis/report.sql
 \i correction/undo.sql
-\i correction/redo.sql
 \i correction/tag.sql
 \i correction/checkout_tag.sql
