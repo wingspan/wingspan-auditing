@@ -70,7 +70,47 @@ left join %I on %I.%I = %I.%I',
 end;
 $$;
 
+with movies_history as (
+  select
+    m.id, m.title,
+    tstzrange(
+      coalesce(m.audit_date, '-infinity'), 
+      coalesce(lead(m.audit_date) over w_m, 'infinity'),
+      '[)'
+    ) movie_effective 
+  from movies$a m
+  window w_m as (partition by m.id order by m.audit_date asc)
+),
+licenses_history as (
+  select
+    l.id, l.title, movie_id,
+    tstzrange(
+      coalesce(l.audit_date, '-infinity'), 
+      coalesce(lead(l.audit_date) over w_l, 'infinity'),
+      '[)'
+    ) license_effective  
+  from licenses$a l
+  window w_l as (partition by l.id order by l.audit_date asc)
 
+  union all 
+  
+  select
+    l.id, l.title, movie_id,
+    tstzrange(
+      '-infinity',
+      l.audit_date,
+      '[)'
+    ) license_effective  
+  from licenses$a l
+  where audit_action = 'I'
+)
+select m.*,
+       l.*,
+       m.movie_effective * l.license_effective
+from movies_history m
+left join licenses_history l
+on l.movie_id = m.id 
+and movie_effective && license_effective;
 
 -- Range test
 select
