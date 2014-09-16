@@ -70,6 +70,8 @@ left join %I on %I.%I = %I.%I',
 end;
 $$;
 
+
+create view history as 
 with movies_history as (
   select
     m.id, m.title,
@@ -103,14 +105,21 @@ licenses_history as (
     ) license_effective  
   from licenses$a l
   where audit_action = 'I'
+), 
+joined_history as (
+  select m.id movie_id, m.title movie_title,
+       l.id license_id, l.title license_title,
+       movie_effective,
+       coalesce(l.license_effective, '[-infinity,infinity]') license_effective
+  from movies_history m
+  left join licenses_history l
+  on l.movie_id = m.id 
 )
-select m.*,
-       l.*,
-       m.movie_effective * l.license_effective
-from movies_history m
-left join licenses_history l
-on l.movie_id = m.id 
-and movie_effective && license_effective;
+select 
+  movie_id, movie_title, license_id, license_title,
+  movie_effective * license_effective effective
+from joined_history
+where movie_effective && license_effective;
 
 -- Range test
 select
