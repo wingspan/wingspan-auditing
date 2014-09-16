@@ -1,7 +1,7 @@
 wingspan-auditing
 =================
 
-Data analysis and correction tools for auditing a Postgres database
+Wingspan Auditing is a library of Postgres stored procedures for data analysis and correction tools, as well as a bolt-on auditing solution. These techniques came out of developments from consulting projects.
 
 Package structure:
 - Examples
