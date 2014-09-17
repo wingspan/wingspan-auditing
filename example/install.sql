@@ -7,3 +7,5 @@ set search_path to movie_audit_demo;
 \i install_auditing.sql
 
 \i example/movies_data.sql
+
+select create_history_view('movies');

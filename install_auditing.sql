@@ -5,6 +5,7 @@
 \i analysis/blame.sql
 \i analysis/diff.sql
 \i analysis/report.sql
+\i analysis/history.sql
 \i correction/undo.sql
 \i correction/tag.sql
 \i correction/checkout_tag.sql
