@@ -25,7 +25,7 @@ Common Configuration Changes:
 * You may wish to change which information is used as 'context' data (username, request ID, etc) - this can be controlled by changing audit/context.sql
 
 References
-- <a href="https://rawgithub.com/garysieling/postgres-immutable-data/master/index.html"/>Talk about this library</a>
+- <a href="https://rawgithub.com/garysieling/postgres-immutable-data/master/index.html">Talk about this library</a>
 - <a href="https://github.com/2ndQuadrant/audit-trigger">2ndQuadrant Audit Triggers</a>
 - <a href="https://wiki.postgresql.org/wiki/Audit_trigger">Postgres Wiki (Audit triggers)</a>
 - <a href="https://wiki.postgresql.org/wiki/Audit_trigger_91plus">Postgres Wiki (Audit triggers - 9.1+)</a>
