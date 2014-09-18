@@ -1,3 +1,57 @@
+--
+-- The function below creates a view that lets you query an entity's history
+-- over time, by filtering to a specific date window.
+--
+--create view history as 
+--with movies_history as (
+--  select
+--    m.id, m.title,
+--    tstzrange(
+--      coalesce(m.audit_date, '-infinity'), 
+--      coalesce(lead(m.audit_date) over w_m, 'infinity'),
+--      '[)'
+--    ) movie_effective 
+--  from movies$a m
+--  window w_m as (partition by m.id order by m.audit_date asc)
+--),
+--licenses_history as (
+--  select
+--    l.id, l.title, movie_id,
+--    tstzrange(
+--      coalesce(l.audit_date, '-infinity'), 
+--      coalesce(lead(l.audit_date) over w_l, 'infinity'),
+--      '[)'
+--    ) license_effective  
+--  from licenses$a l
+--  window w_l as (partition by l.id order by l.audit_date asc)
+--
+--  union all 
+--  
+--  select
+--    l.id, l.title, movie_id,
+--    tstzrange(
+--      '-infinity',
+--      l.audit_date,
+--      '[)'
+--    ) license_effective  
+--  from licenses$a l
+--  where audit_action = 'I'
+--), 
+--joined_history as (
+--  select m.id movie_id, m.title movie_title,
+--       l.id license_id, l.title license_title,
+--       movie_effective,
+--       coalesce(l.license_effective, '[-infinity,infinity]') license_effective
+--  from movies_history m
+--  left join licenses_history l
+--  on l.movie_id = m.id 
+--)
+--select 
+--  movie_id, movie_title, license_id, license_title,
+--  movie_effective * license_effective effective
+--from joined_history
+--where movie_effective && license_effective;
+
 create or replace function create_history_view(
   main_table_name text
 ) returns void
@@ -7,13 +61,36 @@ declare
   col record;
 
   sql text;
+  joins text;
+  effective text;
   column_list text;
   
   table_list text[];
 begin
   table_list := array[main_table_name];
-      
-  sql := 'from ' || main_table_name;
+
+  joins := '';
+  effective := '';
+   
+  sql := format('
+with %s_history as (
+  select
+    %s,
+    tstzrange(
+      coalesce(audit_date, ''-infinity''), 
+      coalesce(lead(audit_date) over w, ''infinity''),
+      ''[)''
+    ) %s_effective 
+  from %s$a
+  window w as (partition by id order by audit_date asc)
+),',
+  main_table_name,
+  per_column('${column}', ', ', current_schema, main_table_name, array['']),
+  main_table_name,
+  main_table_name,
+  main_table_name
+);
+
   for fks in 
     -- todo: recursive
     select 
@@ -34,17 +111,58 @@ begin
   loop
     -- TODO: logic for left / right / outer join
     table_list := array_append(table_list, fks.table_name::text);
-    
+     
     sql := sql || format('
-left join %I on %I.%I = %I.%I', 
-      fks.table_name, 
-      fks.table_name, fks.column_name,
-      fks.table_name, fks.foreign_column_name);
+%s_history as (
+  select
+    %s,
+    tstzrange(
+      coalesce(audit_date, ''-infinity''), 
+      coalesce(lead(audit_date) over w, ''infinity''),
+      ''[)''
+    ) %s_effective 
+  from %s$a
+  window w as (partition by id order by audit_date asc)
+
+  union all 
+  
+  select
+    %s,
+    tstzrange(
+      ''-infinity'',
+      audit_date,
+      ''[)''
+    ) %s_effective  
+  from %s$a
+  where audit_action = ''I''
+),
+',
+  fks.table_name,
+  per_column('${column}', ', ', current_schema, fks.table_name, array['']),
+  fks.table_name,
+  fks.table_name,
+  per_column('${column}', ', ', current_schema, fks.table_name, array['']),
+  fks.table_name,
+  fks.table_name
+);
+    
+    joins := joins || format('
+left join %I 
+  on %I.%I = %I.%I
+  and %I.%I && %I.%I
+', 
+      fks.table_name || '_history', 
+      fks.table_name || '_history', fks.column_name,
+      main_table_name || '_history', fks.foreign_column_name,
+      fks.table_name || '_history', fks.table_name || '_effective',
+      main_table_name || '_history', main_table_name || '_effective'
+);
+    effective := effective ||
+      format(' * coalesce(%I.%I, ''[-infinity, infinity]'')',
+      fks.table_name || '_history', fks.table_name || '_effective');
   end loop;
 
   column_list := '';
-
-  raise notice '*%*', table_list[2];
   
   for col in 
     select * 
@@ -54,143 +172,33 @@ left join %I on %I.%I = %I.%I',
     order by table_name, column_name
   loop    
     column_list := column_list ||
-      col.table_name || '.' || col.column_name || ' as ' || 
-      col.table_name || '_' || col.column_name || ', ';
+      col.table_name || '_history' || '.' || col.column_name || ' as ' || 
+      col.table_name || '_history' || '_' || col.column_name || ', ';
   end loop;
 
-  sql :=
-    'select ' || 
+  sql := 
+    format('create or replace view %s_history_vw as ', main_table_name) ||
+    substring(
+      sql
+      from 0
+      for length(sql) - 1) ||
+    format('
+select %I.%I%s as effective_time,
+',
+  main_table_name || '_history',
+  main_table_name || '_effective',
+  effective 
+) || 
     substring(
       column_list 
       from 0 
       for length(column_list) - 1) ||
-    e'\n' || sql;
+    e'\nfrom ' || main_table_name || '_history' ||
+    joins;
 
   raise notice '%', sql;
+
+  execute sql;
 end;
 $$;
-
-
-create view history as 
-with movies_history as (
-  select
-    m.id, m.title,
-    tstzrange(
-      coalesce(m.audit_date, '-infinity'), 
-      coalesce(lead(m.audit_date) over w_m, 'infinity'),
-      '[)'
-    ) movie_effective 
-  from movies$a m
-  window w_m as (partition by m.id order by m.audit_date asc)
-),
-licenses_history as (
-  select
-    l.id, l.title, movie_id,
-    tstzrange(
-      coalesce(l.audit_date, '-infinity'), 
-      coalesce(lead(l.audit_date) over w_l, 'infinity'),
-      '[)'
-    ) license_effective  
-  from licenses$a l
-  window w_l as (partition by l.id order by l.audit_date asc)
-
-  union all 
-  
-  select
-    l.id, l.title, movie_id,
-    tstzrange(
-      '-infinity',
-      l.audit_date,
-      '[)'
-    ) license_effective  
-  from licenses$a l
-  where audit_action = 'I'
-), 
-joined_history as (
-  select m.id movie_id, m.title movie_title,
-       l.id license_id, l.title license_title,
-       movie_effective,
-       coalesce(l.license_effective, '[-infinity,infinity]') license_effective
-  from movies_history m
-  left join licenses_history l
-  on l.movie_id = m.id 
-)
-select 
-  movie_id, movie_title, license_id, license_title,
-  movie_effective * license_effective effective
-from joined_history
-where movie_effective && license_effective;
-
--- Range test
-select
-  id, title
-from
-  movies_vw
-where 
-  license_effective @> now()
-
--- Range view
-  CREATE view movie_ranges AS 
-  SELECT
-    tsrange(
-      s.audit_date, 
-      coalesce(lead(s.audit_date) 
-                 over(
-                   partition by s.i_id 
-                   order by s.audit_date), 
-               'infinity'), 
-               '[)'
-    ) m_effective,
-    m.audit_date
-    movie.name,
-  FROM movie$a s
-
--- Range view 2
-CREATE view movie_ranges AS 
-  SELECT
-    tsrange(
-      s.audit_date, 
-      coalesce(lead(s.audit_date) 
-                 over(
-                   partition by s.i_id 
-                   order by s.audit_date), 
-               'infinity'), 
-               '[)'
-    ) m_effective,
-    m.audit_date
-    movie.name,
-  FROM movie$a s
-
--- Range view 3
-WITH s as (
-  SELECT
-    *
-  FROM movie_vw s
-  LEFT JOIN (
-    license_vw 
-  ) l ON l.name = m.licensee
-),
-all_joined as (
-  SELECT
-    -- anything not found in a left join gets turned into an infinite range
-    coalesce(mis_effective, tsrange('-infinity', 'infinity', '[]')) mis_effective,
-    coalesce(mir_effective, tsrange('-infinity', 'infinity', '[]')) mir_effective,
-    greatest(s._audit_date_, r._audit_date_) _audit_date_,
-    s.tmf_level
-  FROM s
-  LEFT JOIN r ON s.id = r.id
-)
-select *
-from all_joined
-where ...
-
-
--- Blame with timestamp
-SELECT movie_user, license_user, test
-FROM movies_vw
-WHERE id = ...
-AND date_range <@ '12345'
-
-
-
 
