@@ -65,4 +65,23 @@ begin
 end;
 $$;
 
+-- adapted from https://wiki.postgresql.org/wiki/Clone_schema
+-- needs some work to be complete, but is enough to checkout a readonly view of data at a point in time
+CREATE OR REPLACE FUNCTION clone_schema(source_schema text, dest_schema text) RETURNS void AS
+$BODY$
+DECLARE 
+  objeto text;
+  buffer text;
+BEGIN
+    EXECUTE 'CREATE SCHEMA ' || dest_schema ;
+ 
+    FOR objeto IN
+        SELECT table_name::text FROM information_schema.TABLES WHERE table_schema = source_schema
+    LOOP        
+        buffer := dest_schema || '.' || objeto;
+        EXECUTE 'CREATE TABLE ' || buffer || ' (LIKE ' || source_schema || '.' || objeto || ' INCLUDING CONSTRAINTS INCLUDING INDEXES INCLUDING DEFAULTS)';
+    END LOOP;
+END;
+$BODY$
+LANGUAGE plpgsql VOLATILE;
 
