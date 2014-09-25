@@ -14,7 +14,7 @@ Package structure:
   - Features to do data corrections (undo / rollback / etc)
 
 Setup:
-- Set up a Postgres database (9.3+ supported, but some functionality may work on older versions)
+- Set up a Postgres database (9.3+ supported, but some functionality may work on older versions). Note this has been tested against Heroku Postgres.
 - Ensure that psql is on your path
 - To use the example schema, edit install_movies.sh to have correct connection information
 - Run ./install_movies.sh
@@ -32,3 +32,6 @@ References
 - <a href="http://docs.datomic.com/indexes.html">Datomic (Indexes)</a>
 - <a href="http://en.wikipedia.org/wiki/Allen's_interval_algebra">Allen's Interval Algebra</a>
 
+Articles
+- <a href="http://www.garysieling.com/blog/postgres-time-travelling-debugger">Postgres: Time Travelling Debugger</a>
+- <a href="http://www.garysieling.com/blog/auditing-data-changes-postgres">Auditing Data Changes in Postgres</a>
